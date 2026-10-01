@@ -1,0 +1,21 @@
+services:
+  db:
+    container_name: customer-service
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: customer-service
+      PGDATA: /data/postgres-customer-service
+    volumes:
+      - db:/data/postgres-customer-service
+    ports:
+      - "5433:5432"
+    networks:
+      - db
+    restart: unless-stopped
+networks:
+  db:
+    driver: bridge
+volumes:
+  db:
