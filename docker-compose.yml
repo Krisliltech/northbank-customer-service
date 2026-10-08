@@ -3,9 +3,9 @@ services:
     container_name: customer-service
     image: postgres:latest
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: customer-service
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
       PGDATA: /data/postgres-customer-service
     volumes:
       - db:/data/postgres-customer-service
