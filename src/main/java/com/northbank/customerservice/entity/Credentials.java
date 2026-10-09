@@ -1,12 +1,13 @@
 package com.northbank.customerservice.entity;
 
 import jakarta.persistence.*;
+import org.springframework.data.domain.Persistable;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "credentials")
-public class Credentials {
+public class Credentials implements Persistable<UUID> {
     @Id
     @Column(name = "customer_id")
     private UUID customerId;
@@ -20,16 +21,30 @@ public class Credentials {
     private String password;
 
     @Column(nullable = false, length = 20)
-    private String role = "CUSTOMER";
+    private String role;
+
+    @Transient
+    private boolean isNew = true;
 
     public Credentials() {
     }
 
-    public Credentials(UUID customerId, Customer customer, String password) {
+    public Credentials(UUID customerId, Customer customer, String password, String role) {
         this.customerId = customerId;
         this.customer = customer;
         this.password = password;
+        this.role = (role != null && !role.isBlank()) ? role : "CUSTOMER";
     }
+
+    @Override
+    public UUID getId() { return customerId; }
+
+    @Override
+    public boolean isNew() { return isNew; }
+
+    @PostLoad
+    @PostPersist
+    void markNotNew() { this.isNew = false; }
 
     public UUID getCustomerId() {
         return customerId;
@@ -60,6 +75,6 @@ public class Credentials {
     }
 
     public void setRole(String role) {
-        this.role = role;
+        this.role = (role != null && !role.isBlank()) ? role : "CUSTOMER";
     }
 }

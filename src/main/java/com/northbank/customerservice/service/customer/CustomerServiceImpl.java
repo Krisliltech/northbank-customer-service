@@ -70,7 +70,8 @@ public class CustomerServiceImpl implements CustomerService {
         Credentials credentials = new Credentials(
                 customerId,
                 customer,
-                hashedPassword
+                hashedPassword,
+                null
         );
 
         credentialsRepository.save(credentials);
