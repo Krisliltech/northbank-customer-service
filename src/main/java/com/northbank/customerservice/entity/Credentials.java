@@ -20,8 +20,9 @@ public class Credentials implements Persistable<UUID> {
     @Column(nullable = false, length = 255)
     private String password;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String role;
+    private Role role;
 
     @Transient
     private boolean isNew = true;
@@ -29,11 +30,11 @@ public class Credentials implements Persistable<UUID> {
     public Credentials() {
     }
 
-    public Credentials(UUID customerId, Customer customer, String password, String role) {
+    public Credentials(UUID customerId, Customer customer, String password, Role role) {
         this.customerId = customerId;
         this.customer = customer;
         this.password = password;
-        this.role = (role != null && !role.isBlank()) ? role : "CUSTOMER";
+        this.role = role != null ? role : Role.CUSTOMER;
     }
 
     @Override
@@ -58,7 +59,7 @@ public class Credentials implements Persistable<UUID> {
         return password;
     }
 
-    public String getRole() {
+    public Role getRole() {
         return role;
     }
 
@@ -74,7 +75,7 @@ public class Credentials implements Persistable<UUID> {
         this.password = password;
     }
 
-    public void setRole(String role) {
-        this.role = (role != null && !role.isBlank()) ? role : "CUSTOMER";
+    public void setRole(Role role) {
+        this.role = role != null ? role : Role.CUSTOMER;
     }
 }

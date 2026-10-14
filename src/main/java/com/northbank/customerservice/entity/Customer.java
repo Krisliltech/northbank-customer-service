@@ -1,6 +1,7 @@
 package com.northbank.customerservice.entity;
 
 import jakarta.persistence.*;
+import org.springframework.data.domain.Persistable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -8,7 +9,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "customers")
-public class Customer {
+public class Customer implements Persistable<UUID> {
     @Id
     private UUID id;
 
@@ -39,14 +40,18 @@ public class Customer {
     @Column(length = 10)
     private String postcode;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status = "ACTIVE";
+    private Status status = Status.ACTIVE;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "updated_at", nullable = false, updatable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @Transient
+    private boolean isNew = true;
 
     public Customer() {
     }
@@ -67,6 +72,13 @@ public class Customer {
     public UUID getId() {
         return id;
     }
+
+    @Override
+    public boolean isNew() { return isNew; }
+
+    @PostLoad
+    @PostPersist
+    void markNotNew() { this.isNew = false; }
 
     public String getFirstName() {
         return firstName;
@@ -104,7 +116,7 @@ public class Customer {
         return postcode;
     }
 
-    public String getStatus() {
+    public Status getStatus() {
         return status;
     }
 
@@ -156,7 +168,7 @@ public class Customer {
         this.postcode = postcode;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(Status status) {
         this.status = status;
     }
 
