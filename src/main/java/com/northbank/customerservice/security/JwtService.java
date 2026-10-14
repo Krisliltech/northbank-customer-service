@@ -55,12 +55,12 @@ public class JwtService {
         return verifyToken(token).get("email", String.class);
     }
 
-    public boolean isTokenValid(String token) {
-        try {
-            verifyToken(token);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
+//    public boolean isTokenValid(String token) {
+//        try {
+//            verifyToken(token);
+//            return true;
+//        } catch (Exception e) {
+//            return false;
+//        }
+//    }
 }
