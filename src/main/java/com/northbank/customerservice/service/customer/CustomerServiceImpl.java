@@ -7,14 +7,13 @@ import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
 import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
-import com.northbank.customerservice.exception.CustomerNotFoundException;
-import com.northbank.customerservice.exception.DuplicateEmailException;
-import com.northbank.customerservice.exception.DuplicatePhoneNumberException;
-import com.northbank.customerservice.exception.InvalidCredentialsException;
+import com.northbank.customerservice.exception.*;
 import com.northbank.customerservice.mapper.CustomerMapper;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import com.northbank.customerservice.security.JwtService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +28,7 @@ public class CustomerServiceImpl implements CustomerService {
     private final CredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private static final Logger log = LoggerFactory.getLogger(CustomerServiceImpl.class);
 
     public CustomerServiceImpl(CustomerRepository customerRepository, CredentialsRepository credentialsRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.customerRepository = customerRepository;
@@ -95,6 +95,12 @@ public class CustomerServiceImpl implements CustomerService {
         boolean matches = passwordEncoder.matches(loginRequest.getPassword(), existingCredential.getPassword());
         if (!matches) {
             throw new InvalidCredentialsException("Invalid email or password");
+        }
+
+        if (!"ACTIVE".equals(existingCustomer.getStatus())) {
+            log.warn("Login blocked for non-active account {} (status={})",
+                    existingCustomer.getId(), existingCustomer.getStatus());
+            throw new AccountNotActiveException("Your account is not active. Please contact support.");
         }
 
         String token = jwtService.generateToken(existingCustomer.getId(), existingCustomer.getEmail(), existingCredential.getRole());
