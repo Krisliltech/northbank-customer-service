@@ -1,12 +1,16 @@
 package com.northbank.customerservice.service.customer;
 
+import com.northbank.customerservice.dto.request.ChangePasswordRequest;
 import com.northbank.customerservice.dto.request.LoginRequest;
 import com.northbank.customerservice.dto.request.RegisterRequest;
 import com.northbank.customerservice.dto.request.UpdateRequest;
 import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
+import com.northbank.customerservice.dto.response.PageResponse;
 import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
+import com.northbank.customerservice.entity.Role;
+import com.northbank.customerservice.entity.Status;
 import com.northbank.customerservice.exception.*;
 import com.northbank.customerservice.mapper.CustomerMapper;
 import com.northbank.customerservice.repository.CredentialsRepository;
@@ -14,8 +18,15 @@ import com.northbank.customerservice.repository.CustomerRepository;
 import com.northbank.customerservice.security.JwtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -71,7 +82,7 @@ public class CustomerServiceImpl implements CustomerService {
                 customerId,
                 customer,
                 hashedPassword,
-                null
+                Role.CUSTOMER
         );
 
         credentialsRepository.save(credentials);
@@ -97,13 +108,9 @@ public class CustomerServiceImpl implements CustomerService {
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
-        if (!"ACTIVE".equals(existingCustomer.getStatus())) {
-            log.warn("Login blocked for non-active account {} (status={})",
-                    existingCustomer.getId(), existingCustomer.getStatus());
-            throw new AccountNotActiveException("Your account is not active. Please contact support.");
-        }
+        assertActive(existingCustomer);
 
-        String token = jwtService.generateToken(existingCustomer.getId(), existingCustomer.getEmail(), existingCredential.getRole());
+        String token = jwtService.generateToken(existingCustomer.getId(), existingCustomer.getEmail(), existingCredential.getRole().name());
 
         return new AuthResponse(
                 token,
@@ -121,23 +128,31 @@ public class CustomerServiceImpl implements CustomerService {
             throw new CustomerNotFoundException("Customer not found");
         }
         Customer existingCustomer = customer.get();
-
+        if (!isCallerAdmin()) {
+            assertActive(existingCustomer);
+        }
         return CustomerMapper.toResponse(existingCustomer);
     }
 
     @Override
-    public List<CustomerResponse> getCustomers() {
-        return customerRepository.findAll()
-                .stream()
-                .map(CustomerMapper::toResponse)
+    public PageResponse<CustomerResponse> getCustomers(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").ascending());
+        Page<CustomerResponse> mapped = customerRepository.findAll(pageable)
+                .map(CustomerMapper::toResponse);
+        return PageResponse.from(mapped);
+//        return customerRepository.findAll()
+//                .stream()
+//                .map(CustomerMapper::toResponse)
 //      .map(customer -> CustomerMapper.toResponse(customer)) this is the same thing as the previous line
-                .collect(Collectors.toList());
+//                .collect(Collectors.toList());
     }
 
     @Override
     public CustomerResponse updateCustomer(UpdateRequest updateRequest, UUID id) {
         Customer existingCustomer = customerRepository.findById(id)
                 .orElseThrow(() -> new CustomerNotFoundException("Customer not found"));
+
+        assertActive(existingCustomer);
 
         if (updateRequest.getFirstName() != null) {
             existingCustomer.setFirstName(updateRequest.getFirstName());
@@ -178,5 +193,43 @@ public class CustomerServiceImpl implements CustomerService {
         customerRepository.save(existingCustomer);
 
         return CustomerMapper.toResponse(existingCustomer);
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(ChangePasswordRequest changePasswordRequest, UUID id) {
+        Credentials credentials = credentialsRepository.findById(id)
+                .orElseThrow(() -> new CustomerNotFoundException("Customer not found"));
+
+        Customer existingCustomer = credentials.getCustomer();
+        assertActive(existingCustomer);
+
+        boolean oldPasswordCheck = passwordEncoder.matches(changePasswordRequest.getCurrentPassword(), credentials.getPassword());
+        if (!oldPasswordCheck) {
+            throw new InvalidRequestException("Current password is incorrect");
+        }
+
+        if (changePasswordRequest.getCurrentPassword().equals(changePasswordRequest.getNewPassword())) {
+            throw new InvalidRequestException("New password must be different from the current password");
+        }
+
+        String hashedPassword = passwordEncoder.encode(changePasswordRequest.getNewPassword());
+        credentials.setPassword(hashedPassword);
+//        credentialsRepository.save(credentials);
+        log.info("Password changed for customer {}", id);
+    }
+
+    private void assertActive(Customer customer) {
+        if (customer.getStatus() != Status.ACTIVE) {
+            log.warn("Blocked access to non-active account {} (status={})",
+                    customer.getId(), customer.getStatus());
+            throw new AccountNotActiveException("Your account is not active. Please contact support.");
+        }
+    }
+
+    private boolean isCallerAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 }

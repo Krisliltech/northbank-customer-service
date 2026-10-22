@@ -1,5 +1,6 @@
 package com.northbank.customerservice.controller;
 
+import com.northbank.customerservice.dto.request.ChangePasswordRequest;
 import com.northbank.customerservice.dto.request.LoginRequest;
 import com.northbank.customerservice.dto.request.RegisterRequest;
 import com.northbank.customerservice.dto.request.UpdateRequest;
@@ -71,7 +72,7 @@ public class CustomerController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "403", description = "Not your account",
+            @ApiResponse(responseCode = "403", description = "Not your account, or your account is not active",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "Customer not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
@@ -110,7 +111,7 @@ public class CustomerController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "403", description = "Not your account",
+            @ApiResponse(responseCode = "403", description = "Not your account, or your account is not active",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "Customer not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -121,5 +122,25 @@ public class CustomerController {
         CustomerResponse response = customerService.updateCustomer(request, id);
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
+
+    @PatchMapping("/{id}/password")
+    @PreAuthorize("#id == authentication.principal")
+    @Operation(summary = "Change customer's password (own account)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Password changed"),
+            @ApiResponse(responseCode = "400", description = "Validation failed, wrong current password, or new password same as current",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Not your account, or your account is not active",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Customer not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> changePassword(@PathVariable("id") UUID id, @Valid @RequestBody ChangePasswordRequest request) {
+        customerService.changePassword(request, id);
+        return ResponseEntity.noContent().build();
+    }
+
 
 }
