@@ -12,7 +12,7 @@ public class CustomerMapper {
                 customer.getLastName(),
                 customer.getEmail(),
                 customer.getDateOfBirth(),
-                customer.getStatus(),
+                customer.getStatus().name(),
                 customer.getPhoneNumber(),
                 customer.getAddress(),
                 customer.getCity(),
