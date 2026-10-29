@@ -1,5 +1,6 @@
 package com.northbank.customerservice.security;
 
+import com.northbank.customerservice.entity.Role;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.SignatureException;
 import jakarta.servlet.FilterChain;
@@ -62,16 +63,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             Claims claims = jwtService.verifyToken(token);
 
             UUID customerId = UUID.fromString(claims.getSubject());
-            String role = claims.get("role", String.class);
+            String roleClaim = claims.get("role", String.class);
 
-            if (role == null || role.isBlank()) {
+            if (roleClaim == null || roleClaim.isBlank()) {
                 log.warn("Rejected token with missing role claim from {}", request.getRemoteAddr());
                 request.setAttribute(JWT_ERROR_ATTRIBUTE, ERROR_INVALID);
             } else {
+                Role role = Role.valueOf(roleClaim);
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         customerId,
                         null,
-                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role.name()))
                 );
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
