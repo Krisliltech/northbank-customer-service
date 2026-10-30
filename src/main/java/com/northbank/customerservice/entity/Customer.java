@@ -1,6 +1,7 @@
 package com.northbank.customerservice.entity;
 
 import jakarta.persistence.*;
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Persistable;
 
 import java.time.LocalDate;
@@ -19,13 +20,12 @@ public class Customer implements Persistable<UUID> {
     @Column(name = "last_name", nullable = false, length = 100)
     private String lastName;
 
-    @Column(unique = true, nullable = false, length = 255)
+    @Column(unique = true, nullable = false)
     private String email;
 
     @Column(name = "date_of_birth", nullable = false)
     private LocalDate dateOfBirth;
 
-    @Column(length = 255)
     private String address;
 
     @Column(length = 100)
@@ -69,7 +69,7 @@ public class Customer implements Persistable<UUID> {
         this.gender = gender;
     }
 
-    public UUID getId() {
+    public @NonNull UUID getId() {
         return id;
     }
 

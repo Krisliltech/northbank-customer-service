@@ -1,6 +1,7 @@
 package com.northbank.customerservice.entity;
 
 import jakarta.persistence.*;
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Persistable;
 
 import java.util.UUID;
@@ -17,7 +18,7 @@ public class Credentials implements Persistable<UUID> {
     @JoinColumn(name = "customer_id")
     private Customer customer;
 
-    @Column(nullable = false, length = 255)
+    @Column(nullable = false)
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -38,7 +39,7 @@ public class Credentials implements Persistable<UUID> {
     }
 
     @Override
-    public UUID getId() { return customerId; }
+    public @NonNull UUID getId() { return customerId; }
 
     @Override
     public boolean isNew() { return isNew; }

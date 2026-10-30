@@ -1,9 +1,6 @@
 package com.northbank.customerservice.service.customer;
 
-import com.northbank.customerservice.dto.request.ChangePasswordRequest;
-import com.northbank.customerservice.dto.request.LoginRequest;
-import com.northbank.customerservice.dto.request.RegisterRequest;
-import com.northbank.customerservice.dto.request.UpdateRequest;
+import com.northbank.customerservice.dto.request.*;
 import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
 import com.northbank.customerservice.dto.response.PageResponse;
@@ -16,22 +13,19 @@ import com.northbank.customerservice.mapper.CustomerMapper;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import com.northbank.customerservice.security.JwtService;
+import com.northbank.customerservice.security.SecurityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class CustomerServiceImpl implements CustomerService {
@@ -40,12 +34,14 @@ public class CustomerServiceImpl implements CustomerService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private static final Logger log = LoggerFactory.getLogger(CustomerServiceImpl.class);
+    private final String dummyHash;
 
     public CustomerServiceImpl(CustomerRepository customerRepository, CredentialsRepository credentialsRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.customerRepository = customerRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.dummyHash = passwordEncoder.encode("timing-equaliser-not-a-real-password");
     }
 
     @Override
@@ -91,33 +87,21 @@ public class CustomerServiceImpl implements CustomerService {
 
     @Override
     public AuthResponse login(LoginRequest loginRequest) {
-        Optional<Customer> customer = customerRepository.findByEmail(loginRequest.getEmail());
-        if (customer.isEmpty()) {
-            throw new InvalidCredentialsException("Invalid email or password");
-        }
+        AuthResult authResult = authenticateCustomer(loginRequest.getEmail(), loginRequest.getPassword());
 
-        Customer existingCustomer = customer.get();
-        Optional<Credentials> credentials = credentialsRepository.findById(existingCustomer.getId());
-        if (credentials.isEmpty()) {
-            throw new InvalidCredentialsException("Invalid email or password");
-        }
+        Customer customer = authResult.customer();
+        Credentials credentials = authResult.credentials();
 
-        Credentials existingCredential = credentials.get();
-        boolean matches = passwordEncoder.matches(loginRequest.getPassword(), existingCredential.getPassword());
-        if (!matches) {
-            throw new InvalidCredentialsException("Invalid email or password");
-        }
-
-        assertActive(existingCustomer);
-
-        String token = jwtService.generateToken(existingCustomer.getId(), existingCustomer.getEmail(), existingCredential.getRole().name());
+        assertActive(customer);
+        UUID customerId = customer.getId();
+        String token = jwtService.generateToken(customerId, customer.getEmail(), credentials.getRole().name());
 
         return new AuthResponse(
                 token,
-                existingCustomer.getId(),
-                existingCustomer.getFirstName(),
-                existingCustomer.getLastName(),
-                existingCustomer.getEmail()
+                customerId,
+                customer.getFirstName(),
+                customer.getLastName(),
+                customer.getEmail()
         );
     }
 
@@ -128,7 +112,7 @@ public class CustomerServiceImpl implements CustomerService {
             throw new CustomerNotFoundException("Customer not found");
         }
         Customer existingCustomer = customer.get();
-        if (!isCallerAdmin()) {
+        if (!SecurityUtils.isCallerAdmin()) {
             assertActive(existingCustomer);
         }
         return CustomerMapper.toResponse(existingCustomer);
@@ -227,9 +211,89 @@ public class CustomerServiceImpl implements CustomerService {
         }
     }
 
-    private boolean isCallerAdmin() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth != null && auth.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    private CustomerResponse changeStatus(Customer customer, Status status) {
+        Status oldStatus = customer.getStatus();
+        if (status == oldStatus) {
+            throw new InvalidRequestException("Customer is already " + status);
+        }
+
+        if (!oldStatus.canTransitionTo(status)){
+            throw new InvalidStatusTransitionException("Cannot change status from " + oldStatus + " to " + status);
+        }
+
+        customer.setStatus(status);
+//        customerRepository.save(customer);
+        log.info("Status changed: customer = {} {} -> {} by actor = {}",
+                customer.getId(), oldStatus, status, SecurityUtils.currentActorId());
+
+        return CustomerMapper.toResponse(customer);
+    }
+
+    @Override
+    @Transactional
+    public void deActivate(UUID id, DeactivateRequest deactivateRequest) {
+        Credentials credentials = credentialsRepository.findById(id)
+                .orElseThrow(() -> new CustomerNotFoundException("Customer not found"));
+
+        Customer existingCustomer = credentials.getCustomer();
+        assertActive(existingCustomer);
+
+        boolean passwordCheck = passwordEncoder.matches(deactivateRequest.getCurrentPassword(), credentials.getPassword());
+        if (!passwordCheck) {
+            throw new InvalidRequestException("Password is incorrect");
+        }
+
+       changeStatus(existingCustomer, Status.DEACTIVATED);
+    }
+
+    @Override
+    @Transactional
+    public CustomerResponse reActivate(LoginRequest reactivateRequest) {
+        AuthResult authResult = authenticateCustomer(reactivateRequest.getEmail(), reactivateRequest.getPassword());
+
+        Customer customer = authResult.customer();
+
+        Status currentStatus = customer.getStatus();
+        if (currentStatus == Status.ACTIVE) {
+            throw new InvalidRequestException("Account is already active");
+        }
+        if (currentStatus != Status.DEACTIVATED) {
+            throw new AccountNotActiveException(
+                    "Your account cannot be reactivated online. Please contact support.");
+        }
+
+        return changeStatus(customer, Status.ACTIVE);
+    }
+
+    @Override
+    @Transactional
+    public CustomerResponse changeStatusAsAdmin(UUID id, StatusRequest statusRequest) {
+        if (id.equals(SecurityUtils.currentActorId())) {
+            throw new InvalidRequestException("You cannot change your own account status");
+        }
+
+        Status status = statusRequest.getStatus();
+        if (status == Status.DEACTIVATED) {
+            throw new InvalidRequestException("Only the customer can deactivate their account");
+        }
+
+        Customer customer = customerRepository.findById(id)
+                .orElseThrow(() -> new CustomerNotFoundException("Customer not found"));
+        return changeStatus(customer, status);
+    }
+
+    private record AuthResult(Customer customer, Credentials credentials) {}
+
+    private AuthResult authenticateCustomer(String email, String rawPassword) {
+        Optional<Customer> customer = customerRepository.findByEmail(email);
+        Optional<Credentials> credentials = customer.flatMap(c -> credentialsRepository.findById(c.getId()));
+
+        String hashToCheck = credentials.map(Credentials::getPassword).orElse(dummyHash);
+        boolean matches = passwordEncoder.matches(rawPassword, hashToCheck);
+
+        if (customer.isEmpty() || credentials.isEmpty() || !matches) {
+            throw new InvalidCredentialsException("Invalid email or password");
+        }
+        return new AuthResult(customer.get(), credentials.get());
     }
 }

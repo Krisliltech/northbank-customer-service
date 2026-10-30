@@ -1,19 +1,14 @@
 package com.northbank.customerservice.controller;
 
-import com.northbank.customerservice.dto.request.ChangePasswordRequest;
-import com.northbank.customerservice.dto.request.LoginRequest;
-import com.northbank.customerservice.dto.request.RegisterRequest;
-import com.northbank.customerservice.dto.request.UpdateRequest;
-import com.northbank.customerservice.dto.response.AuthResponse;
-import com.northbank.customerservice.dto.response.CustomerResponse;
-import com.northbank.customerservice.dto.response.ErrorResponse;
-import com.northbank.customerservice.dto.response.PageResponse;
+import com.northbank.customerservice.dto.request.*;
+import com.northbank.customerservice.dto.response.*;
 import com.northbank.customerservice.service.customer.CustomerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -142,5 +137,61 @@ public class CustomerController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("#id == authentication.principal")
+    @Operation(summary = "Deactivate your own account (requires current password)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Account deactivated"),
+            @ApiResponse(responseCode = "400", description = "Validation failed, or password is incorrect",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Not your account, or your account is not active",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Customer not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> deActivate(@PathVariable("id") UUID id, @Valid @RequestBody DeactivateRequest request) {
+        customerService.deActivate(id, request);
+        return ResponseEntity.noContent().build();
+    }
 
+    @PostMapping("/reactivate")
+    @Operation(summary = "Reactivate a self-deactivated account")
+    @SecurityRequirements
+    @Schema(description = "One of ACTIVE, SUSPENDED, CLOSED")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Account reactivated"),
+            @ApiResponse(responseCode = "400", description = "Validation failed, or account is already active",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid email or password",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Account cannot be reactivated online (suspended or closed). Contact support",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<CustomerResponse> reActivate(@Valid @RequestBody LoginRequest request) {
+        CustomerResponse response = customerService.reActivate(request);
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Change a customer's status (admin only)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Status changed"),
+            @ApiResponse(responseCode = "400", description = "Invalid status value, status unchanged, own account targeted, or DEACTIVATED requested",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Admin role required",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Customer not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "Transition not allowed from the current status",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<CustomerResponse> changeStatusAsAdmin(@PathVariable("id") UUID id, @Valid @RequestBody StatusRequest request) {
+        CustomerResponse response = customerService.changeStatusAsAdmin(id, request);
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
 }
