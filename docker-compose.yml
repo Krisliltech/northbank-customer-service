@@ -1,7 +1,7 @@
 services:
   db:
-    container_name: customer-service
-    image: postgres:latest
+    container_name: customer-service-db
+    image: postgres:18
     environment:
       POSTGRES_USER: ${DATABASE_USERNAME}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
@@ -14,6 +14,28 @@ services:
     networks:
       - db
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    container_name: customer-service-app
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DATABASE_NAME}
+    ports:
+      - "8080:8080"
+    networks:
+      - db
+    restart: unless-stopped
+
 networks:
   db:
     driver: bridge

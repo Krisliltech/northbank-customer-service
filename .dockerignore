@@ -1,0 +1,37 @@
+
+# Git files
+.git
+.gitignore
+
+# Maven build output
+target/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Docker files not needed in build context
+HELP.md
+README.md
+docker-compose*.yml
