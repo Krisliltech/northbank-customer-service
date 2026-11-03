@@ -1,0 +1,6 @@
+Dependency vulnerability decisions
+
+Finding	                            Decision	                          Reason
+Jackson CVE-2026-110879	            fixed	                              jackson-bom.version 3.1.8 and jackson-2-bom.version 2.21.8 in pom.xml; remove them once Spring Boot manages the fixed versions
+asm, 6 CVEs	                        accepted	                          test-scope only (via json-smart), not in the jar or the image
+logback-classic CVE-2026-19880	    accepted	                          needs a sifting appender with MDC-based file paths; the service logs to the console only. Revisit if file logging is added or when Boot moves to a fixed Logback
