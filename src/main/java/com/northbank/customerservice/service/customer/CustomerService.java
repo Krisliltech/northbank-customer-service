@@ -1,6 +1,7 @@
 package com.northbank.customerservice.service.customer;
 
 import com.northbank.customerservice.dto.request.*;
+import com.northbank.customerservice.dto.response.AdminResponse;
 import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
 import com.northbank.customerservice.dto.response.PageResponse;
@@ -18,5 +19,6 @@ public interface CustomerService {
     void changePassword(ChangePasswordRequest changePasswordRequest,  UUID id);
     void deActivate(UUID id, DeactivateRequest deactivateRequest);
     CustomerResponse reActivate(LoginRequest reactivateRequest);
-    CustomerResponse changeStatusAsAdmin(UUID id, StatusRequest statusRequest);
+    CustomerResponse changeStatusByAdmin(UUID id, StatusRequest statusRequest);
+    AdminResponse changeRoleByAdmin(UUID id, RoleRequest roleRequest);
 }

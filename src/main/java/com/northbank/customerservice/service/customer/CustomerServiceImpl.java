@@ -1,6 +1,7 @@
 package com.northbank.customerservice.service.customer;
 
 import com.northbank.customerservice.dto.request.*;
+import com.northbank.customerservice.dto.response.AdminResponse;
 import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
 import com.northbank.customerservice.dto.response.PageResponse;
@@ -9,6 +10,7 @@ import com.northbank.customerservice.entity.Customer;
 import com.northbank.customerservice.entity.Role;
 import com.northbank.customerservice.entity.Status;
 import com.northbank.customerservice.exception.*;
+import com.northbank.customerservice.mapper.AdminMapper;
 import com.northbank.customerservice.mapper.CustomerMapper;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
@@ -77,8 +79,7 @@ public class CustomerServiceImpl implements CustomerService {
         Credentials credentials = new Credentials(
                 customerId,
                 customer,
-                hashedPassword,
-                Role.CUSTOMER
+                hashedPassword
         );
 
         credentialsRepository.save(credentials);
@@ -267,7 +268,7 @@ public class CustomerServiceImpl implements CustomerService {
 
     @Override
     @Transactional
-    public CustomerResponse changeStatusAsAdmin(UUID id, StatusRequest statusRequest) {
+    public CustomerResponse changeStatusByAdmin(UUID id, StatusRequest statusRequest) {
         if (id.equals(SecurityUtils.currentActorId())) {
             throw new InvalidRequestException("You cannot change your own account status");
         }
@@ -295,5 +296,29 @@ public class CustomerServiceImpl implements CustomerService {
             throw new InvalidCredentialsException("Invalid email or password");
         }
         return new AuthResult(customer.get(), credentials.get());
+    }
+
+    @Override
+    @Transactional
+    public AdminResponse changeRoleByAdmin(UUID id, RoleRequest roleRequest) {
+        if (id.equals(SecurityUtils.currentActorId())) {
+            throw new InvalidRequestException("You cannot change your own account role");
+        }
+
+        Credentials credentials = credentialsRepository.findById(id)
+                .orElseThrow(() -> new CustomerNotFoundException("Customer not found"));
+        Customer customer = credentials.getCustomer();
+        assertActive(customer);
+
+        Role oldRole = credentials.getRole();
+        Role newRole = roleRequest.getRole();
+        if (newRole == oldRole) {
+            throw new InvalidRequestException("Account role is already " + roleRequest.getRole());
+        }
+
+        credentials.setRole(roleRequest.getRole());
+        log.warn("Role changed: customer={} {} -> {} by actor={}",
+                id, oldRole, newRole, SecurityUtils.currentActorId());
+        return AdminMapper.toResponse(customer, credentials.getRole());
     }
 }

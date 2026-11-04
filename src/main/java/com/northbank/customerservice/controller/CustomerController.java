@@ -190,8 +190,27 @@ public class CustomerController {
             @ApiResponse(responseCode = "409", description = "Transition not allowed from the current status",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<CustomerResponse> changeStatusAsAdmin(@PathVariable("id") UUID id, @Valid @RequestBody StatusRequest request) {
-        CustomerResponse response = customerService.changeStatusAsAdmin(id, request);
+    public ResponseEntity<CustomerResponse> changeStatusByAdmin(@PathVariable("id") UUID id, @Valid @RequestBody StatusRequest request) {
+        CustomerResponse response = customerService.changeStatusByAdmin(id, request);
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PatchMapping("/{id}/role")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Change a customer's role (admin only)")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Role changed"),
+            @ApiResponse(responseCode = "400", description = "Invalid role value, role unchanged, or own account targeted",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Admin role required or Account is not active",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Customer not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<AdminResponse> changeRoleByAdmin(@PathVariable("id") UUID id, @Valid @RequestBody RoleRequest request) {
+        AdminResponse response = customerService.changeRoleByAdmin(id, request);
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 }

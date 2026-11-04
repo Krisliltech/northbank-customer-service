@@ -23,7 +23,7 @@ public class Credentials implements Persistable<UUID> {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private Role role;
+    private Role role = Role.CUSTOMER;
 
     @Transient
     private boolean isNew = true;
@@ -31,11 +31,10 @@ public class Credentials implements Persistable<UUID> {
     public Credentials() {
     }
 
-    public Credentials(UUID customerId, Customer customer, String password, Role role) {
+    public Credentials(UUID customerId, Customer customer, String password) {
         this.customerId = customerId;
         this.customer = customer;
         this.password = password;
-        this.role = role != null ? role : Role.CUSTOMER;
     }
 
     @Override
@@ -48,10 +47,6 @@ public class Credentials implements Persistable<UUID> {
     @PostPersist
     void markNotNew() { this.isNew = false; }
 
-    public UUID getCustomerId() {
-        return customerId;
-    }
-
     public Customer getCustomer() {
         return customer;
     }
@@ -62,10 +57,6 @@ public class Credentials implements Persistable<UUID> {
 
     public Role getRole() {
         return role;
-    }
-
-    public void setCustomerId(UUID customerId) {
-        this.customerId = customerId;
     }
 
     public void setCustomer(Customer customer) {
