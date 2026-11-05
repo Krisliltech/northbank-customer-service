@@ -2,6 +2,8 @@ package com.northbank.customerservice.controller;
 
 import com.northbank.customerservice.dto.request.*;
 import com.northbank.customerservice.dto.response.*;
+import com.northbank.customerservice.entity.Role;
+import com.northbank.customerservice.entity.Status;
 import com.northbank.customerservice.service.customer.CustomerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -30,6 +32,7 @@ public class CustomerController {
 
     @PostMapping("/register")
     @Operation(summary = "Register a new customer")
+    @SecurityRequirements
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Customer created"),
             @ApiResponse(responseCode = "400", description = "Validation failed",
@@ -44,6 +47,7 @@ public class CustomerController {
 
     @PostMapping("/login")
     @Operation(summary = "Log in and receive authentication")
+    @SecurityRequirements
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Login successful, token returned"),
             @ApiResponse(responseCode = "400", description = "Missing email or password",
@@ -79,21 +83,29 @@ public class CustomerController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "List customers, paginated (admin only)")
+    @Operation(summary = "List customers with paging, sorting and filters (admin only)")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Page of customers"),
+            @ApiResponse(responseCode = "400",
+                    description = "Invalid sortBy, direction, status or role value, a non-numeric page or size, or a search term over 100 characters",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "403", description = "Admin role required",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<PageResponse<CustomerResponse>> getCustomers(
+    public ResponseEntity<PageResponse<AdminResponse>> getCustomers(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "asc") String direction,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) Role role,
+            @RequestParam(required = false) String search
     ) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 50);
-        PageResponse<CustomerResponse> response = customerService.getCustomers(safePage, safeSize);
+        PageResponse<AdminResponse> response = customerService.getCustomers(safePage, safeSize, sortBy, direction, new CustomerFilter(status, role, search));
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
@@ -200,7 +212,7 @@ public class CustomerController {
     @Operation(summary = "Change a customer's role (admin only)")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Role changed"),
-            @ApiResponse(responseCode = "400", description = "Invalid role value, role unchanged, or own account targeted",
+            @ApiResponse(responseCode = "400", description = "Invalid or missing role value, role unchanged, or own account targeted",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),

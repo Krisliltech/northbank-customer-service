@@ -14,6 +14,7 @@ import com.northbank.customerservice.mapper.AdminMapper;
 import com.northbank.customerservice.mapper.CustomerMapper;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
+import com.northbank.customerservice.repository.CustomerSpecifications;
 import com.northbank.customerservice.security.JwtService;
 import com.northbank.customerservice.security.SecurityUtils;
 import org.slf4j.Logger;
@@ -26,8 +27,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class CustomerServiceImpl implements CustomerService {
@@ -37,6 +41,13 @@ public class CustomerServiceImpl implements CustomerService {
     private final JwtService jwtService;
     private static final Logger log = LoggerFactory.getLogger(CustomerServiceImpl.class);
     private final String dummyHash;
+    private static final int MAX_SEARCH_LENGTH = 100;
+    private static final Map<String, String> SORTABLE_FIELDS = Map.of(
+            "createdAt", "createdAt",
+            "firstName", "firstName",
+            "lastName", "lastName",
+            "email", "email"
+    );
 
     public CustomerServiceImpl(CustomerRepository customerRepository, CredentialsRepository credentialsRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.customerRepository = customerRepository;
@@ -120,10 +131,40 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public PageResponse<CustomerResponse> getCustomers(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").ascending());
-        Page<CustomerResponse> mapped = customerRepository.findAll(pageable)
-                .map(CustomerMapper::toResponse);
+    public PageResponse<AdminResponse> getCustomers(int page, int size, String sortBy, String direction, CustomerFilter filter) {
+        String field = SORTABLE_FIELDS.get(sortBy);
+        if (field == null) {
+            throw new InvalidRequestException(
+                    "Invalid sortBy. Allowed values: createdAt, firstName, lastName, email");
+        }
+
+        Sort.Direction dir;
+        if ("asc".equalsIgnoreCase(direction)) {
+            dir = Sort.Direction.ASC;
+        } else if ("desc".equalsIgnoreCase(direction)) {
+            dir = Sort.Direction.DESC;
+        } else {
+            throw new InvalidRequestException("Invalid direction. Allowed values: asc, desc");
+        }
+
+        if (filter.search() != null && filter.search().strip().length() > MAX_SEARCH_LENGTH) {
+            throw new InvalidRequestException("Search term must be at most 100 characters");
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(dir, field));
+        Page<Customer> customers = customerRepository
+                .findAll(CustomerSpecifications.fromFilter(filter), pageable);
+
+        List<UUID> ids = customers.getContent().stream()
+                .map(Customer::getId)
+                .toList();
+
+        Map<UUID, Role> rolesById = credentialsRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Credentials::getId, Credentials::getRole));
+
+        Page<AdminResponse> mapped = customers
+                .map(c -> AdminMapper.toResponse(c, rolesById.get(c.getId())));
+
         return PageResponse.from(mapped);
 //        return customerRepository.findAll()
 //                .stream()

@@ -9,6 +9,6 @@ public class AdminMapper {
 
     public static AdminResponse toResponse(Customer customer, Role role) {
 
-        return new AdminResponse( CustomerMapper.toResponse(customer), role.name());
+        return new AdminResponse( CustomerMapper.toResponse(customer), role == null ? null : role.name());
     }
 }

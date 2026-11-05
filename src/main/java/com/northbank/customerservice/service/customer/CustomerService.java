@@ -14,7 +14,7 @@ public interface CustomerService {
     CustomerResponse register(RegisterRequest registerRequest);
     AuthResponse login(LoginRequest loginRequest);
     CustomerResponse getCustomerById(UUID id);
-    PageResponse<CustomerResponse> getCustomers(int page, int size);
+    PageResponse<AdminResponse> getCustomers(int page, int size, String sortBy, String direction, CustomerFilter filter);
     CustomerResponse updateCustomer(UpdateRequest updateRequest, UUID id);
     void changePassword(ChangePasswordRequest changePasswordRequest,  UUID id);
     void deActivate(UUID id, DeactivateRequest deactivateRequest);
