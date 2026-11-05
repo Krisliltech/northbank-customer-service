@@ -106,14 +106,16 @@ public class CustomerServiceImpl implements CustomerService {
 
         assertActive(customer);
         UUID customerId = customer.getId();
-        String token = jwtService.generateToken(customerId, customer.getEmail(), credentials.getRole().name());
+        String roleName = credentials.getRole().name();
+        String token = jwtService.generateToken(customerId, customer.getEmail(), roleName);
 
         return new AuthResponse(
                 token,
                 customerId,
                 customer.getFirstName(),
                 customer.getLastName(),
-                customer.getEmail()
+                customer.getEmail(),
+                roleName
         );
     }
 
