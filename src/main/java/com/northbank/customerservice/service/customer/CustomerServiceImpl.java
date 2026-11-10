@@ -232,18 +232,18 @@ public class CustomerServiceImpl implements CustomerService {
         Customer existingCustomer = credentials.getCustomer();
         assertActive(existingCustomer);
 
+        if (changePasswordRequest.getCurrentPassword().equals(changePasswordRequest.getNewPassword())) {
+            throw new InvalidRequestException("New password must be different from the current password");
+        }
+
         boolean oldPasswordCheck = passwordEncoder.matches(changePasswordRequest.getCurrentPassword(), credentials.getPassword());
         if (!oldPasswordCheck) {
             throw new InvalidRequestException("Current password is incorrect");
         }
 
-        if (changePasswordRequest.getCurrentPassword().equals(changePasswordRequest.getNewPassword())) {
-            throw new InvalidRequestException("New password must be different from the current password");
-        }
-
         String hashedPassword = passwordEncoder.encode(changePasswordRequest.getNewPassword());
         credentials.setPassword(hashedPassword);
-//        credentialsRepository.save(credentials);
+
         log.info("Password changed for customer {}", id);
     }
 
@@ -251,8 +251,17 @@ public class CustomerServiceImpl implements CustomerService {
         if (customer.getStatus() != Status.ACTIVE) {
             log.warn("Blocked access to non-active account {} (status={})",
                     customer.getId(), customer.getStatus());
-            throw new AccountNotActiveException("Your account is not active. Please contact support.");
+            throw notActive(customer.getStatus());
         }
+    }
+
+    private AccountNotActiveException notActive(Status status) {
+        String message = switch (status) {
+            case DEACTIVATED -> "Your account is deactivated. You can reactivate it using the reactivate option.";
+            case SUSPENDED, CLOSED   -> "Your account is " + status.name().toLowerCase() + "." + " Please contact support.";
+            case ACTIVE      -> throw new IllegalStateException("Account is already active");
+        };
+        return new AccountNotActiveException(message);
     }
 
     private CustomerResponse changeStatus(Customer customer, Status status) {
@@ -302,8 +311,7 @@ public class CustomerServiceImpl implements CustomerService {
             throw new InvalidRequestException("Account is already active");
         }
         if (currentStatus != Status.DEACTIVATED) {
-            throw new AccountNotActiveException(
-                    "Your account cannot be reactivated online. Please contact support.");
+            throw notActive(currentStatus);
         }
 
         return changeStatus(customer, Status.ACTIVE);
