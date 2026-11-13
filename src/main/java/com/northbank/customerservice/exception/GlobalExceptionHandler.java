@@ -24,44 +24,29 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    private ResponseEntity<ErrorResponse> build(HttpStatus status, String message) {
+        ErrorResponse body = new ErrorResponse(message, status.value(), LocalDateTime.now());
+        return ResponseEntity.status(status).body(body);
+    }
+
     @ExceptionHandler(CustomerNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCustomerNotFound(CustomerNotFoundException ex) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                ex.getMessage(),
-                HttpStatus.NOT_FOUND.value(),
-                LocalDateTime.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        return build(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateEmailException(DuplicateEmailException ex) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                ex.getMessage(),
-                HttpStatus.CONFLICT.value(),
-                LocalDateTime.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(DuplicatePhoneNumberException.class)
     public ResponseEntity<ErrorResponse> handleDuplicatePhoneNumberException(DuplicatePhoneNumberException ex) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                ex.getMessage(),
-                HttpStatus.CONFLICT.value(),
-                LocalDateTime.now()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+        return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCredentialsException(InvalidCredentialsException ex) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                ex.getMessage(),
-                HttpStatus.UNAUTHORIZED.value(),
-                LocalDateTime.now()
-        );
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -71,12 +56,7 @@ public class GlobalExceptionHandler {
         Object who = (auth != null) ? auth.getPrincipal() : "unknown";
 
         log.warn("Access denied: user={} {} {}", who, request.getMethod(), request.getRequestURI());
-        ErrorResponse errorResponse = new ErrorResponse(
-                "You do not have permission to access this resource",
-                HttpStatus.FORBIDDEN.value(),
-                LocalDateTime.now()
-        );
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+        return build(HttpStatus.FORBIDDEN, "You do not have permission to access this resource");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -95,17 +75,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
-        ErrorResponse body = new ErrorResponse(
-                "Malformed or unreadable request body", HttpStatus.BAD_REQUEST.value(), LocalDateTime.now());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return build(HttpStatus.BAD_REQUEST, "Malformed or unreadable request body");
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        ErrorResponse body = new ErrorResponse(
-                "Invalid value for parameter '" + ex.getName() + "'",
-                HttpStatus.BAD_REQUEST.value(), LocalDateTime.now());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return build(HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
     }
 
     @ExceptionHandler(Exception.class)
@@ -126,22 +101,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccountNotActiveException.class)
     public ResponseEntity<ErrorResponse> handleAccountNotActive(AccountNotActiveException ex) {
-        ErrorResponse body = new ErrorResponse(
-                ex.getMessage(), HttpStatus.FORBIDDEN.value(), LocalDateTime.now());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        return build(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
-        ErrorResponse body = new ErrorResponse(
-                ex.getMessage(), HttpStatus.BAD_REQUEST.value(), LocalDateTime.now());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(InvalidStatusTransitionException.class)
     public ResponseEntity<ErrorResponse> handleInvalidStatusTransition(InvalidStatusTransitionException ex) {
-        ErrorResponse body = new ErrorResponse(
-                ex.getMessage(), HttpStatus.CONFLICT.value(), LocalDateTime.now());
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 }
