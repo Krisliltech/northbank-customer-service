@@ -1,10 +1,10 @@
 package com.northbank.customerservice.service.customer;
 
-import com.northbank.customerservice.dto.request.ChangePasswordRequest;
-import com.northbank.customerservice.dto.request.LoginRequest;
-import com.northbank.customerservice.dto.request.RegisterRequest;
+import com.northbank.customerservice.dto.request.*;
+import com.northbank.customerservice.dto.response.AdminResponse;
 import com.northbank.customerservice.dto.response.AuthResponse;
 import com.northbank.customerservice.dto.response.CustomerResponse;
+import com.northbank.customerservice.dto.response.PageResponse;
 import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
 import com.northbank.customerservice.entity.Role;
@@ -13,22 +13,35 @@ import com.northbank.customerservice.exception.*;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import com.northbank.customerservice.security.JwtService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.never;
 
@@ -47,6 +60,11 @@ class CustomerServiceImplTest {
     @InjectMocks
     CustomerServiceImpl customerServiceImpl;
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     private RegisterRequest validRequest() {
         RegisterRequest request = new RegisterRequest();
         request.setFirstName("John");
@@ -64,6 +82,12 @@ class CustomerServiceImplTest {
         return request;
     }
 
+    private UpdateRequest updateRequest () {
+        UpdateRequest request = new UpdateRequest();
+        request.setCity("Manchester");
+        return request;
+    }
+
     private ChangePasswordRequest changePasswordRequest(String current, String password) {
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setCurrentPassword(current);
@@ -76,6 +100,14 @@ class CustomerServiceImplTest {
                 LocalDate.of(1990, 5, 15), null, null, null, null, null);
         customer.setStatus(status);
         return customer;
+    }
+
+    private void actAs(UUID actorId, String... roles) {
+        List<GrantedAuthority> authorities = Arrays.stream(roles)
+                .map(role -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + role))
+                .toList();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(actorId, null, authorities));
     }
 
     @Test
@@ -121,7 +153,7 @@ class CustomerServiceImplTest {
                 .isInstanceOf(DuplicatePhoneNumberException.class)
                 .hasMessage("Phone number already in use");
 
-        verify(customerRepository).findByPhoneNumber(request.getPhoneNumber());
+        verify(customerRepository).findByPhoneNumber("07123456789");
         verify(customerRepository, never()).save(any());
         verifyNoInteractions(credentialsRepository);
     }
@@ -133,7 +165,6 @@ class CustomerServiceImplTest {
 
         Customer customer = customerWithStatus(id, Status.ACTIVE);
         Credentials credentials = new Credentials(id, customer, "stored-hash");
-        credentials.setRole(Role.CUSTOMER);
 
         when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(customer));
         when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
@@ -184,7 +215,7 @@ class CustomerServiceImplTest {
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("Invalid email or password");
 
-        verify(passwordEncoder).matches(request.getPassword(), credentials.getPassword());
+        verify(passwordEncoder).matches(request.getPassword(), "stored-hash");
         verify(customerRepository).findByEmail(request.getEmail());
         verify(customerRepository, never()).save(any());
         verifyNoInteractions(jwtService);
@@ -212,7 +243,7 @@ class CustomerServiceImplTest {
                 .isInstanceOf(AccountNotActiveException.class)
                 .hasMessage(expectedMessage);
 
-        verify(passwordEncoder).matches(request.getPassword(), credentials.getPassword());
+        verify(passwordEncoder).matches(request.getPassword(), "stored-hash");
         verify(customerRepository).findByEmail(request.getEmail());
         verify(customerRepository, never()).save(any());
         verifyNoInteractions(jwtService);
@@ -235,7 +266,7 @@ class CustomerServiceImplTest {
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("Invalid email or password");
 
-        verify(passwordEncoder).matches(request.getPassword(), credentials.getPassword());
+        verify(passwordEncoder).matches(request.getPassword(), "stored-hash");
         verify(customerRepository).findByEmail(request.getEmail());
         verify(customerRepository, never()).save(any());
         verifyNoInteractions(jwtService);
@@ -257,7 +288,7 @@ class CustomerServiceImplTest {
         assertThat(credentials.getPassword()).isEqualTo("new-hash");
         verify(passwordEncoder).matches(request.getCurrentPassword(), "old-hash");
         verify(passwordEncoder).encode(request.getNewPassword());
-        verify(credentialsRepository, never()).save(any());
+        verify(credentialsRepository).save(credentials);
     }
 
     @ParameterizedTest
@@ -331,5 +362,668 @@ class CustomerServiceImplTest {
         verify(passwordEncoder, never()).matches(any(), any());
         verify(passwordEncoder, never()).encode("Str0ng!Pass1");
         verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusByAdmin_usersStatusChange_replacesTheOldStatus() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.SUSPENDED);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.changeStatusByAdmin(id, request);
+
+        assertThat(response.getStatus()).isEqualTo("SUSPENDED");
+        verify(customerRepository).save(customer);
+    }
+
+    @Test
+    void changeStatusByAdmin_adminOwnStatusChange_throwsInvalidRequestException() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.SUSPENDED);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        assertThatThrownBy(() -> customerServiceImpl.changeStatusByAdmin(adminId, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("You cannot change your own account status");
+
+        verify(customerRepository, never()).findById(any());
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusByAdmin_deactivateUsersAcct_throwsInvalidRequestException() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.DEACTIVATED);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+
+        assertThatThrownBy(() -> customerServiceImpl.changeStatusByAdmin(id, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Only the customer can deactivate their account");
+
+        verify(customerRepository, never()).findById(any());
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusByAdmin_unknownUsersStatusChange_throwsCustomerNotFoundException() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.SUSPENDED);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+
+        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerServiceImpl.changeStatusByAdmin(id, request))
+                .isInstanceOf(CustomerNotFoundException.class)
+                .hasMessage("Customer not found");
+
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusByAdmin_sameStatusChange_throwsInvalidRequestException() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.SUSPENDED);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.SUSPENDED);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> customerServiceImpl.changeStatusByAdmin(id, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Customer is already " + Status.SUSPENDED);
+
+        assertThat(customer.getStatus()).isEqualTo(Status.SUSPENDED);
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void changeStatusByAdmin_forbiddenStatusTransitionChange_throwsInvalidStatusTransitionException() {
+        StatusRequest request = new StatusRequest();
+        request.setStatus(Status.ACTIVE);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.CLOSED);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> customerServiceImpl.changeStatusByAdmin(id, request))
+                .isInstanceOf(InvalidStatusTransitionException.class)
+                .hasMessage("Cannot change status from " + Status.CLOSED + " to " + Status.ACTIVE);
+
+        assertThat(customer.getStatus()).isEqualTo(Status.CLOSED);
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_withCorrectCredentials_replacesOldStatus() {
+        DeactivateRequest request = new DeactivateRequest();
+        request.setCurrentPassword("Str0ng!Pass");
+        UUID id = UUID.randomUUID();
+
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getCurrentPassword(), credentials.getPassword())).thenReturn(true);
+
+        customerServiceImpl.deActivate(id, request);
+
+        assertThat(customer.getStatus()).isEqualTo(Status.DEACTIVATED);
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(customerRepository).save(customer);
+    }
+
+    @Test
+    void deactivate_withUnknownId_throwsCustomerNotFoundException() {
+        DeactivateRequest request = new DeactivateRequest();
+        request.setCurrentPassword("Str0ng!Pass");
+        UUID id = UUID.randomUUID();
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerServiceImpl.deActivate(id, request))
+                .isInstanceOf(CustomerNotFoundException.class)
+                .hasMessage("Customer not found");
+
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder, never()).matches(any(), any());
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_withWrongPassword_throwsInvalidRequestException() {
+        DeactivateRequest request = new DeactivateRequest();
+        request.setCurrentPassword("Str0ng!Pass");
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getCurrentPassword(), credentials.getPassword())).thenReturn(false);
+
+        assertThatThrownBy(() -> customerServiceImpl.deActivate(id, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Password is incorrect");
+
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_withAnInactiveAcct_throwsAccountNotActiveException() {
+        DeactivateRequest request = new DeactivateRequest();
+        request.setCurrentPassword("Str0ng!Pass");
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.SUSPENDED);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+
+        assertThatThrownBy(() -> customerServiceImpl.deActivate(id, request))
+                .isInstanceOf(AccountNotActiveException.class)
+                .hasMessage("Your account is suspended. Please contact support.");
+
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder, never()).matches(any(), any());
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void reactivate_deactivatedAcctWithCorrectCredentials_replacesOldStatus() {
+        LoginRequest request = loginRequest();
+        UUID id = UUID.randomUUID();
+
+        Customer customer = customerWithStatus(id, Status.DEACTIVATED);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(customer));
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getPassword(), credentials.getPassword())).thenReturn(true);
+
+        CustomerResponse response = customerServiceImpl.reActivate(request);
+
+
+        assertThat(response.getStatus()).isEqualTo("ACTIVE");
+        assertThat(response.getId()).isEqualTo(id);
+        assertThat(response.getEmail()).isEqualTo(request.getEmail());
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "SUSPENDED, Your account is suspended. Please contact support.",
+            "CLOSED, Your account is closed. Please contact support."
+    })
+    void reactivate_suspendedOrClosedAcctWithCorrectCredentials_throwsAccountNotActiveException(Status status, String message) {
+        LoginRequest request = loginRequest();
+        UUID id = UUID.randomUUID();
+
+        Customer customer = customerWithStatus(id, status);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(customer));
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getPassword(), credentials.getPassword())).thenReturn(true);
+
+        assertThatThrownBy(() -> customerServiceImpl.reActivate(request))
+                .isInstanceOf(AccountNotActiveException.class)
+                .hasMessage(message);
+
+        assertThat(customer.getStatus()).isEqualTo(status);
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void reactivate_activeAcctWithCorrectCredentials_throwsInvalidRequestException() {
+        LoginRequest request = loginRequest();
+        UUID id = UUID.randomUUID();
+
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(customer));
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getPassword(), credentials.getPassword())).thenReturn(true);
+
+        assertThatThrownBy(() -> customerServiceImpl.reActivate(request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Account is already active");
+
+        assertThat(customer.getStatus().name()).isEqualTo("ACTIVE");
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void reactivate_withWrongPassword_throwsInvalidCredentialsException() {
+        LoginRequest request = loginRequest();
+        UUID id = UUID.randomUUID();
+
+        Customer customer = customerWithStatus(id, Status.SUSPENDED);
+        Credentials credentials  = new Credentials(id, customer, "old-hash");
+
+        when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.of(customer));
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+        when(passwordEncoder.matches(request.getPassword(), credentials.getPassword())).thenReturn(false);
+
+        assertThatThrownBy(() -> customerServiceImpl.reActivate(request))
+                .isInstanceOf(InvalidCredentialsException.class)
+                .hasMessage("Invalid email or password");
+
+        assertThat(customer.getStatus().name()).isEqualTo("SUSPENDED");
+        verify(credentialsRepository).findById(id);
+        verify(passwordEncoder).matches("Str0ng!Pass", "old-hash");
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void reactivate_withWrongEmail_throwsInvalidCredentialsException() {
+        LoginRequest request = loginRequest();
+
+        when(customerRepository.findByEmail(request.getEmail())).thenReturn(Optional.empty());
+        when(passwordEncoder.matches(eq(request.getPassword()), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> customerServiceImpl.reActivate(request))
+                .isInstanceOf(InvalidCredentialsException.class)
+                .hasMessage("Invalid email or password");
+
+        verify(passwordEncoder).matches(eq(request.getPassword()), any());
+        verify(customerRepository).findByEmail(request.getEmail());
+        verifyNoInteractions(credentialsRepository);
+    }
+
+    @Test
+    void changeRoleByAdmin_shouldReplaceOldRole() {
+        RoleRequest request = new RoleRequest();
+        request.setRole(Role.ADMIN);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+
+        AdminResponse response = customerServiceImpl.changeRoleByAdmin(id, request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getRole()).isEqualTo("ADMIN");
+        assertThat(response.getId()).isEqualTo(id);
+        assertThat(response.getEmail()).isEqualTo(customer.getEmail());
+        assertThat(credentials.getRole()).isEqualTo(Role.ADMIN);
+        verify(credentialsRepository).save(credentials);
+    }
+
+    @Test
+    void changeRoleByAdmin_shouldThrowInvalidRequestExceptionForOwnAccount() {
+        RoleRequest request = new RoleRequest();
+        request.setRole(Role.CUSTOMER);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        assertThatThrownBy(() -> customerServiceImpl.changeRoleByAdmin(adminId, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("You cannot change your own account role");
+
+        verifyNoInteractions(credentialsRepository);
+    }
+
+    @Test
+    void changeRoleByAdmin_shouldThrowInvalidRequestExceptionForSameRoleChange() {
+        RoleRequest request = new RoleRequest();
+        request.setRole(Role.CUSTOMER);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+
+        assertThatThrownBy(() -> customerServiceImpl.changeRoleByAdmin(id, request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Account role is already CUSTOMER");
+
+        verify(credentialsRepository).findById(id);
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void changeRoleByAdmin_shouldThrowCustomerNotFoundExceptionForUnknownId() {
+        RoleRequest request = new RoleRequest();
+        request.setRole(Role.ADMIN);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerServiceImpl.changeRoleByAdmin(id, request))
+                .isInstanceOf(CustomerNotFoundException.class)
+                .hasMessage("Customer not found");
+
+        verify(credentialsRepository).findById(id);
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "DEACTIVATED, Your account is deactivated. You can reactivate it using the reactivate option.",
+            "SUSPENDED, Your account is suspended. Please contact support.",
+            "CLOSED, Your account is closed. Please contact support."
+    })
+    void changeRoleByAdmin_shouldThrowAccountNotActiveExceptionForInactiveAcct(Status status, String message) {
+        RoleRequest request = new RoleRequest();
+        request.setRole(Role.CUSTOMER);
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, status);
+        Credentials credentials = new Credentials(id, customer, "old-hash");
+
+        when(credentialsRepository.findById(id)).thenReturn(Optional.of(credentials));
+
+        assertThatThrownBy(() -> customerServiceImpl.changeRoleByAdmin(id, request))
+                .isInstanceOf(AccountNotActiveException.class)
+                .hasMessage(message);
+
+        verify(credentialsRepository).findById(id);
+        verify(credentialsRepository, never()).save(any());
+    }
+
+    @Test
+    void updateCustomer_shouldReplaceTheUpdatedValue() {
+        UpdateRequest request = updateRequest();
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.updateCustomer(request, id);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getCity()).isEqualTo("Manchester");
+        assertThat(response.getFirstName()).isEqualTo("John");
+        assertThat(response.getLastName()).isEqualTo("Doe");
+        verify(customerRepository).findById(id);
+        verify(customerRepository).save(customer);
+    }
+
+    @Test
+    void updateCustomer_shouldNotReplaceAnyValueAndNotThrowForEmptyRequest() {
+        UpdateRequest request = new UpdateRequest();
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.updateCustomer(request, id);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getDateOfBirth()).isEqualTo(customer.getDateOfBirth());
+        assertThat(response.getFirstName()).isEqualTo("John");
+        assertThat(response.getLastName()).isEqualTo("Doe");
+        verify(customerRepository).findById(id);
+        verify(customerRepository).save(customer);
+    }
+
+    @Test
+    void updateCustomer_shouldReplaceTheCustomersOwnPhoneNumberAndNotThrowForUsingOwnPhoneNumber() {
+        UpdateRequest request = updateRequest();
+        request.setPhoneNumber("123456789");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByPhoneNumber(request.getPhoneNumber())).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.updateCustomer(request, id);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getDateOfBirth()).isEqualTo(customer.getDateOfBirth());
+        assertThat(response.getFirstName()).isEqualTo("John");
+        assertThat(response.getLastName()).isEqualTo("Doe");
+        assertThat(response.getCity()).isEqualTo("Manchester");
+        assertThat(response.getPhoneNumber()).isEqualTo("123456789");
+        verify(customerRepository).findById(id);
+        verify(customerRepository).findByPhoneNumber("123456789");
+        verify(customerRepository).save(customer);
+    }
+
+    @Test
+    void updateCustomer_shouldThrowDuplicatePhoneNumberExceptionForDuplicatePhoneNumber() {
+        UpdateRequest request = updateRequest();
+        request.setPhoneNumber("123456789");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        UUID id2 = UUID.randomUUID();
+        Customer customer2 = customerWithStatus(id2, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByPhoneNumber(request.getPhoneNumber())).thenReturn(Optional.of(customer2));
+
+        assertThatThrownBy(() -> customerServiceImpl.updateCustomer(request, id))
+                .isInstanceOf(DuplicatePhoneNumberException.class)
+                .hasMessage("Phone number already in use");
+
+        assertThat(customer.getPhoneNumber()).isNull();
+        verify(customerRepository).findById(id);
+        verify(customerRepository).findByPhoneNumber("123456789");
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void updateCustomer_shouldThrowAccountNotActiveExceptionForInactiveAcct() {
+        UpdateRequest request = updateRequest();
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.DEACTIVATED);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> customerServiceImpl.updateCustomer(request, id))
+                .isInstanceOf(AccountNotActiveException.class)
+                .hasMessage("Your account is deactivated. You can reactivate it using the reactivate option.");
+
+        verify(customerRepository).findById(id);
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void updateCustomer_shouldThrowCustomerNotFoundExceptionForUnknownId() {
+        UpdateRequest request = updateRequest();
+
+        UUID id = UUID.randomUUID();
+
+        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerServiceImpl.updateCustomer(request, id))
+                .isInstanceOf(CustomerNotFoundException.class)
+                .hasMessage("Customer not found");
+
+        verify(customerRepository).findById(id);
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void getCustomerById_shouldReturnTheCustomer() {
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.getCustomerById(id);
+
+
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(id);
+        assertThat(response.getDateOfBirth()).isEqualTo(customer.getDateOfBirth());
+        assertThat(response.getFirstName()).isEqualTo("John");
+        assertThat(response.getLastName()).isEqualTo("Doe");
+        verify(customerRepository).findById(id);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "DEACTIVATED, Your account is deactivated. You can reactivate it using the reactivate option.",
+            "SUSPENDED, Your account is suspended. Please contact support.",
+            "CLOSED, Your account is closed. Please contact support."
+    })
+    void getCustomerById_shouldThrowAccountNotActiveExceptionForInactiveAcct(Status status, String message) {
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, status);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> customerServiceImpl.getCustomerById(id))
+                .isInstanceOf(AccountNotActiveException.class)
+                .hasMessage(message);
+
+        verify(customerRepository).findById(id);
+    }
+
+    @Test
+    void getCustomerById_shouldReturnTheCustomerByAdmin() {
+        UUID adminId = UUID.randomUUID();
+
+        actAs(adminId, "ADMIN");
+
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.DEACTIVATED);
+
+        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+
+        CustomerResponse response = customerServiceImpl.getCustomerById(id);
+
+
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(id);
+        assertThat(response.getDateOfBirth()).isEqualTo(customer.getDateOfBirth());
+        assertThat(response.getFirstName()).isEqualTo("John");
+        assertThat(response.getLastName()).isEqualTo("Doe");
+        verify(customerRepository).findById(id);
+    }
+
+    @Test
+    void getCustomerById_shouldThrowCustomerNotFoundExceptionForUnknownId() {
+        UUID id = UUID.randomUUID();
+
+        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerServiceImpl.getCustomerById(id))
+                .isInstanceOf(CustomerNotFoundException.class)
+                .hasMessage("Customer not found");
+
+        verify(customerRepository).findById(id);
+    }
+
+    @Test
+    void getCustomers_returnsPageWithRolesAndAppliesSort() {
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+        Credentials credentials = new Credentials(id, customer, "hash");
+        credentials.setRole(Role.ADMIN);
+
+        when(customerRepository.findAll(ArgumentMatchers.<Specification<Customer>>any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(customer), PageRequest.of(0, 20), 1));
+        when(credentialsRepository.findAllById(List.of(id))).thenReturn(List.of(credentials));
+
+        PageResponse<AdminResponse> result = customerServiceImpl.getCustomers(
+                0, 20, "lastName", "desc", new CustomerFilter(null, null, null));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().getFirst().getRole()).isEqualTo("ADMIN");
+        assertThat(result.getTotalElements()).isEqualTo(1);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(customerRepository).findAll(ArgumentMatchers.<Specification<Customer>>any(), captor.capture());
+
+        Sort.Order order = captor.getValue().getSort().getOrderFor("lastName");
+        assertThat(order).isNotNull();
+        assertThat(order.getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void getCustomers_withInvalidSortBy_throwsInvalidRequestException() {
+        assertThatThrownBy(() -> customerServiceImpl.getCustomers(
+                0, 20, "password", "asc", new CustomerFilter(null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Invalid sortBy. Allowed values: createdAt, firstName, lastName, email");
+
+        verifyNoInteractions(customerRepository);
+        verifyNoInteractions(credentialsRepository);
+    }
+
+    @Test
+    void getCustomers_withInvalidDirection_throwsInvalidRequestException() {
+        assertThatThrownBy(() -> customerServiceImpl.getCustomers(
+                0, 20, "lastName", "sideways", new CustomerFilter(null, null, null)))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("Invalid direction. Allowed values: asc, desc");
+
+        verifyNoInteractions(customerRepository);
+        verifyNoInteractions(credentialsRepository);
+    }
+
+    @Test
+    void getCustomers_whenCustomerHasNoCredentialsRow_returnsNullRole() {
+        UUID id = UUID.randomUUID();
+        Customer customer = customerWithStatus(id, Status.ACTIVE);
+
+        when(customerRepository.findAll(ArgumentMatchers.<Specification<Customer>>any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(customer), PageRequest.of(0, 20), 1));
+        when(credentialsRepository.findAllById(List.of(id))).thenReturn(List.of());
+
+        PageResponse<AdminResponse> result = customerServiceImpl.getCustomers(
+                0, 20, "createdAt", "asc", new CustomerFilter(null, null, null));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().getFirst().getRole()).isNull();
+        assertThat(result.getContent().getFirst().getEmail()).isEqualTo("john.doe@example.com");
     }
 }

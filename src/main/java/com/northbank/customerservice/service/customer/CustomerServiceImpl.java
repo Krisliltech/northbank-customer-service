@@ -243,6 +243,7 @@ public class CustomerServiceImpl implements CustomerService {
 
         String hashedPassword = passwordEncoder.encode(changePasswordRequest.getNewPassword());
         credentials.setPassword(hashedPassword);
+        credentialsRepository.save(credentials);
 
         log.info("Password changed for customer {}", id);
     }
@@ -275,7 +276,7 @@ public class CustomerServiceImpl implements CustomerService {
         }
 
         customer.setStatus(status);
-//        customerRepository.save(customer);
+        customerRepository.save(customer);
         log.info("Status changed: customer = {} {} -> {} by actor = {}",
                 customer.getId(), oldStatus, status, SecurityUtils.currentActorId());
 
@@ -368,6 +369,7 @@ public class CustomerServiceImpl implements CustomerService {
         }
 
         credentials.setRole(roleRequest.getRole());
+        credentialsRepository.save(credentials);
         log.warn("Role changed: customer={} {} -> {} by actor={}",
                 id, oldRole, newRole, SecurityUtils.currentActorId());
         return AdminMapper.toResponse(customer, credentials.getRole());
