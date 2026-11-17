@@ -3,6 +3,8 @@ package com.northbank.customerservice.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.Locale;
+
 public class LoginRequest {
     @NotBlank(message = "Email is required")
     private String email;
@@ -18,7 +20,7 @@ public class LoginRequest {
     }
 
     public void setEmail(String email) {
-        this.email = email.strip().toLowerCase();
+        this.email = email.strip().toLowerCase(Locale.ROOT);
     }
 
     public String getPassword() {

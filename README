@@ -1,6 +1,63 @@
-Dependency vulnerability decisions
+# NorthBank Customer Service
 
-Finding	                            Decision	                          Reason
-Jackson CVE-2026-110879	            fixed	                              jackson-bom.version 3.1.8 and jackson-2-bom.version 2.21.8 in pom.xml; remove them once Spring Boot manages the fixed versions
-asm, 6 CVEs	                        accepted	                          test-scope only (via json-smart), not in the jar or the image
-logback-classic CVE-2026-19880	    accepted	                          needs a sifting appender with MDC-based file paths; the service logs to the console only. Revisit if file logging is added or when Boot moves to a fixed Logback
+Registration, authentication and customer management for the NorthBank platform.
+
+## Stack
+Java 21 · Spring Boot 4.1 · PostgreSQL 18 · Flyway · Spring Security (JWT, JJWT) ·
+springdoc OpenAPI · JUnit 5, Mockito, MockMvc, Testcontainers
+
+## Configuration
+Copy `.env.example` to `.env` and fill in the values. `.env` is git-ignored.
+
+| Variable | Purpose |
+|---|---|
+| `JWT_SECRET` | HMAC signing key, at least 32 characters. Generate with `openssl rand -base64 32`. Avoid `$`. |
+| `JWT_EXPIRATION` | Access-token lifetime in milliseconds |
+|`DATABASE_NAME`, `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` | PostgreSQL credentials |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Bootstrap admin. Used only when no active admin exists. Remove `ADMIN_PASSWORD` after the first start. |
+
+The admin password must satisfy the same policy as registration (8 to 64 characters, upper and lower case,
+a digit and a special character, no leading or trailing whitespace).
+
+## Running
+- **From the IDE:** `docker compose up -d db`, then run `CustomerServiceApplication`.
+- **Everything in Docker:** `docker compose up --build`.
+
+Swagger UI: http://localhost:8080/swagger-ui.html
+
+## Tests
+```bash
+mvn test
+```
+Unit tests need nothing else. The integration test starts a throwaway PostgreSQL container with
+Testcontainers, so Docker must be running.
+
+## API summary
+| Endpoint | Access |
+|---|---|
+| `POST /api/customers/register`, `POST /api/customers/login`, `POST /api/customers/reactivate` | Public |
+| `GET`, `PATCH /api/customers/{id}` | Owner or admin |
+| `PATCH /api/customers/{id}/password`, `PATCH /api/customers/{id}/deactivate` | Owner |
+| `GET /api/customers` (paging, sorting, filters) | Admin |
+| `PATCH /api/customers/{id}/status`, `PATCH /api/customers/{id}/role` | Admin |
+
+Account statuses: `ACTIVE`, `DEACTIVATED` (customer's choice, self-reactivation allowed),
+`SUSPENDED` and `CLOSED` (admin only, support must act).
+
+## Known limitations
+- Tokens are not revocable. A changed role or status takes effect on the next login, and
+  existing tokens stay valid until they expire.
+- No rate limiting, refresh tokens, logout, email verification or password reset yet.
+- Authentication moves to an OAuth2 identity provider when the API gateway is added.
+
+
+## Dependency vulnerability decisions
+Overrides live in `pom.xml` with their CVE ids. Review them on every Spring Boot upgrade and remove
+any that Boot now manages.
+
+| Finding | Decision | Reason |
+|---|---|---|
+| Jackson CVE-2026-110879 | Overridden (3.1.8 and 2.21.8) | Patch-level fix within the managed lines. Remove once Boot manages the fixed versions. |
+| logback-classic CVE-2026-19880 | Overridden (1.6.7) | Not reachable: it needs a sifting appender with MDC-based file paths, and the service logs to the console only. Fixed only in 1.6.3 or later, and Boot 4.1 manages 1.5.x, so this is outside what Boot tests. Revert if logging misbehaves, and remove once Boot adopts 1.6. |
+| asm, 6 CVEs | Overridden (9.11.1) | Test scope only (via `json-smart`), not in the jar or image. Applied to clear the scanner. |
+| commons-codec CVE-2026-119078 | Overridden (1.23.0) | Test scope only (via Testcontainers). The flaw is a Javadoc inconsistency in `Blake3`, and the fix only corrects the documentation. Applied to clear the scanner and has no security effect. |

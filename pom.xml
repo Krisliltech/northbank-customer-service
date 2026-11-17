@@ -31,9 +31,14 @@
         <argLine>
             -javaagent:${settings.localRepository}/org/mockito/mockito-core/5.23.0/mockito-core-5.23.0.jar
         </argLine>
-        <!-- Remove these once Spring Boot manages the fixed versions (CVE-2026-110879) -->
+        <!-- Existing security overrides - Remove these once Spring Boot manages the fixed versions -->
+        <!-- CVE-2026-110879 Jackson: fixed in 3.1.8 and 2.21.8 -->
         <jackson-bom.version>3.1.8</jackson-bom.version>
         <jackson-2-bom.version>2.21.8</jackson-2-bom.version>
+        <!-- CVE-2026-19880 logback-classic: fixed only in 1.6.3 or later; Boot 4.1 manages 1.5.x -->
+        <logback.version>1.6.7</logback.version>
+        <!-- CVE-2026-119078 commons-codec: test scope, documentation-only fix (scanner noise) -->
+        <commons-codec.version>1.23.0</commons-codec.version>
     </properties>
     <dependencies>
         <dependency>
@@ -146,6 +151,13 @@
                 <version>5.1.0</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!-- security override -->
+            <!-- CVE-2026-110257/58/60/61/63 and 110591: test scope only (json-smart) -->
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+                <version>9.11.1</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

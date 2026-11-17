@@ -3,6 +3,7 @@ package com.northbank.customerservice.dto.request;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
+import java.util.Locale;
 
 public class RegisterRequest {
     @Size(min = 1, max = 100, message = "First name must be between 1 and 100 characters")
@@ -73,7 +74,7 @@ public class RegisterRequest {
     }
 
     public void setEmail(String email) {
-        this.email = email.strip().toLowerCase();
+        this.email = email.strip().toLowerCase(Locale.ROOT);
     }
 
     public String getPassword() {
