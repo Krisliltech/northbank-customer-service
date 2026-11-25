@@ -9,9 +9,12 @@ import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
 import com.northbank.customerservice.entity.Role;
 import com.northbank.customerservice.entity.Status;
+import com.northbank.customerservice.event.CustomerRegisteredEvent;
+import com.northbank.customerservice.event.CustomerStatusChangedEvent;
 import com.northbank.customerservice.exception.*;
 import com.northbank.customerservice.mapper.AdminMapper;
 import com.northbank.customerservice.mapper.CustomerMapper;
+import com.northbank.customerservice.outbox.OutboxService;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import com.northbank.customerservice.repository.CustomerSpecifications;
@@ -39,6 +42,7 @@ public class CustomerServiceImpl implements CustomerService {
     private final CredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final OutboxService outboxService;
     private static final Logger log = LoggerFactory.getLogger(CustomerServiceImpl.class);
     private final String dummyHash;
     private static final int MAX_SEARCH_LENGTH = 100;
@@ -49,15 +53,17 @@ public class CustomerServiceImpl implements CustomerService {
             "email", "email"
     );
 
-    public CustomerServiceImpl(CustomerRepository customerRepository, CredentialsRepository credentialsRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public CustomerServiceImpl(CustomerRepository customerRepository, CredentialsRepository credentialsRepository, PasswordEncoder passwordEncoder, JwtService jwtService, OutboxService outboxService) {
         this.customerRepository = customerRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.dummyHash = passwordEncoder.encode("timing-equaliser-not-a-real-password");
+        this.outboxService = outboxService;
     }
 
     @Override
+    @Transactional
     public CustomerResponse register(RegisterRequest request) {
         if (customerRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new DuplicateEmailException("Email already in use");
@@ -94,6 +100,7 @@ public class CustomerServiceImpl implements CustomerService {
         );
 
         credentialsRepository.save(credentials);
+        outboxService.record(CustomerRegisteredEvent.of(customerId, customer.getStatus()));
         return CustomerMapper.toResponse(customer);
     }
 
@@ -277,6 +284,7 @@ public class CustomerServiceImpl implements CustomerService {
 
         customer.setStatus(status);
         customerRepository.save(customer);
+        outboxService.record(CustomerStatusChangedEvent.of(customer.getId(), oldStatus, status));
         log.info("Status changed: customer = {} {} -> {} by actor = {}",
                 customer.getId(), oldStatus, status, SecurityUtils.currentActorId());
 

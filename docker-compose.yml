@@ -30,14 +30,18 @@ services:
       - .env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DATABASE_NAME}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8080:8080"
     networks:
       - db
+      - northbank-net
     restart: unless-stopped
 
 networks:
   db:
     driver: bridge
+  northbank-net:
+    external: true
 volumes:
   db:

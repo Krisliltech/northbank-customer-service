@@ -97,7 +97,7 @@ public class RegisterRequest {
         return address;
     }
 
-    public void setAddressLine1(String address) {
+    public void setAddress(String address) {
         this.address = address == null ? null : address.strip();
     }
 
