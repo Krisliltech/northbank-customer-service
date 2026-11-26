@@ -42,6 +42,9 @@ public class OutboxEvent {
     @Column(name = "last_error", length = 500)
     private String lastError;
 
+    @Column(name = "quarantined_at")
+    private Instant quarantinedAt;
+
     protected OutboxEvent() {
     }
 
@@ -62,5 +65,9 @@ public class OutboxEvent {
     public void recordFailure(String error) {
         this.attempts++;
         this.lastError = (error == null) ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+
+    public void quarantine() {
+        this.quarantinedAt = Instant.now();
     }
 }
