@@ -5,6 +5,8 @@ import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
 import com.northbank.customerservice.entity.Role;
 import com.northbank.customerservice.entity.Status;
+import com.northbank.customerservice.event.CustomerRegisteredEvent;
+import com.northbank.customerservice.outbox.OutboxService;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import jakarta.validation.ConstraintViolation;
@@ -31,6 +33,7 @@ public class AdminSeeder implements CommandLineRunner {
 
     private final CustomerRepository customerRepository;
     private final CredentialsRepository credentialsRepository;
+    private final OutboxService outboxService;
     private final PasswordEncoder passwordEncoder;
     private final Validator validator;
     private final String adminEmail;
@@ -38,12 +41,14 @@ public class AdminSeeder implements CommandLineRunner {
 
     public AdminSeeder(CustomerRepository customerRepository,
                        CredentialsRepository credentialsRepository,
+                       OutboxService outboxService,
                        PasswordEncoder passwordEncoder,
                        Validator validator,
                        @Value("${ADMIN_EMAIL:}") String adminEmail,
                        @Value("${ADMIN_PASSWORD:}") String adminPassword) {
         this.customerRepository = customerRepository;
         this.credentialsRepository = credentialsRepository;
+        this.outboxService = outboxService;
         this.passwordEncoder = passwordEncoder;
         this.validator = validator;
         this.adminEmail = adminEmail;
@@ -91,6 +96,7 @@ public class AdminSeeder implements CommandLineRunner {
         Credentials credentials = new Credentials(id, customer, passwordEncoder.encode(adminPassword));
         credentials.setRole(Role.ADMIN);
         credentialsRepository.save(credentials);
+        outboxService.record(CustomerRegisteredEvent.of(customer.getId(), customer.getStatus()));
 
         log.warn("{}. Created admin account: id={}", situation, id);
     }

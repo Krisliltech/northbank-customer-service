@@ -3,12 +3,19 @@
 Registration, authentication and customer management for the NorthBank platform.
 
 ## Stack
-Java 21 · Spring Boot 4.1 · PostgreSQL 18 · Flyway · Spring Security (JWT, JJWT) ·
+Java 21 · Spring Boot 4.1 · PostgreSQL 18 · Flyway · Spring Security (JWT, JJWT) · Apache Kafka ·
 springdoc OpenAPI · JUnit 5, Mockito, MockMvc, Testcontainers
 
 ## Documentation
 - [Architecture](docs/architecture.md)
 - [Database schema](docs/database.md)
+- [Event contract](docs/events.md)
+
+## Events
+Customer Service tells other services about customers by publishing events to Kafka through a
+transactional outbox: `customer.registered` and `customer.status-changed`. Events carry ids, statuses and
+timestamps only, never personal data. If Kafka is unavailable the service keeps working, and events are
+published when it returns. See the architecture page for how it works and the event contract for the fields.
 
 ## Configuration
 Copy `.env.example` to `.env` and fill in the values. `.env` is git-ignored.
@@ -17,15 +24,28 @@ Copy `.env.example` to `.env` and fill in the values. `.env` is git-ignored.
 |---|---|
 | `JWT_SECRET` | HMAC signing key, at least 32 characters. Generate with `openssl rand -base64 32`. Avoid `$`. |
 | `JWT_EXPIRATION` | Access-token lifetime in milliseconds |
-|`DATABASE_NAME`, `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` | PostgreSQL credentials |
+| `DATABASE_NAME`, `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` | PostgreSQL connection settings |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Bootstrap admin. Used only when no active admin exists. Remove `ADMIN_PASSWORD` after the first start. |
+| `KAFKA_BOOTSTRAP_SERVERS` | Broker address. `localhost:9094` from the IDE, `kafka:9092` inside Docker (default `localhost:9094`). |
+| `KAFKA_USERNAME`, `KAFKA_PASSWORD` | Kafka login. `KAFKA_PASSWORD` must equal `NB_KAFKA_CUSTOMER_SERVICE_PASSWORD` in the platform repo's `.env`. |
 
 The admin password must satisfy the same policy as registration (8 to 64 characters, upper and lower case,
 a digit and a special character, no leading or trailing whitespace).
 
 ## Running
+Start the platform first. Kafka runs from the separate `northbank-platform` repository:
+```bash
+# in the northbank-platform repository
+docker compose up -d
+```
+Then, in this repository:
 - **From the IDE:** `docker compose up -d db`, then run `CustomerServiceApplication`.
-- **Everything in Docker:** `docker compose up --build`.
+- **Everything in Docker:** `docker compose up --build`. The container joins the platform's `northbank-net`
+  network and reaches Kafka at `kafka:9092`, so start the platform first. Compose reports a missing
+  network if it isn't running. Stop the IDE run first: both use port 8080.
+
+The service starts and serves requests even when Kafka is down. When the connection works, the start-up log
+contains `Kafka reachable at ...; authenticated and allowed to describe [...]`.
 
 Swagger UI: http://localhost:8080/swagger-ui.html
 
@@ -34,7 +54,7 @@ Swagger UI: http://localhost:8080/swagger-ui.html
 mvn test
 ```
 Unit tests need nothing else. The integration test starts a throwaway PostgreSQL container with
-Testcontainers, so Docker must be running.
+Testcontainers, so Docker must be running. Tests for the outbox and Kafka publishing are not written yet.
 
 ## API summary
 | Endpoint | Access |
@@ -53,6 +73,9 @@ Account statuses: `ACTIVE`, `DEACTIVATED` (customer's choice, self-reactivation 
   existing tokens stay valid until they expire.
 - No rate limiting, refresh tokens, logout, email verification or password reset yet.
 - Authentication moves to an OAuth2 identity provider when the API gateway is added.
+- No TLS on the Kafka connection yet (local development only).
+- Run a single instance of the service for now. With several, the event relay can no longer guarantee
+  per-customer ordering.
 
 
 ## Dependency vulnerability decisions

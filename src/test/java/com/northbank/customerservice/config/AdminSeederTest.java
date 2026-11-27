@@ -5,6 +5,7 @@ import com.northbank.customerservice.entity.Credentials;
 import com.northbank.customerservice.entity.Customer;
 import com.northbank.customerservice.entity.Role;
 import com.northbank.customerservice.entity.Status;
+import com.northbank.customerservice.outbox.OutboxService;
 import com.northbank.customerservice.repository.CredentialsRepository;
 import com.northbank.customerservice.repository.CustomerRepository;
 import jakarta.validation.ConstraintViolation;
@@ -36,13 +37,12 @@ class AdminSeederTest {
     @Mock PasswordEncoder passwordEncoder;
     @Mock Validator validator;
     @Mock ConstraintViolation<RegisterRequest> violation;
-
+    @Mock OutboxService outboxService;
 
     private AdminSeeder seederWith(String email, String password) {
-        return new AdminSeeder(customerRepository, credentialsRepository,
+        return new AdminSeeder(customerRepository, credentialsRepository, outboxService,
                 passwordEncoder, validator, email, password);
     }
-
 
     @Test
     void run_whenAnActiveAdminExists_ignoresEnvironmentValuesAndDoesNothing() {
